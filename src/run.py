@@ -106,6 +106,65 @@ def get_imgurls_from_album_link(webdriverObj, album_link):
 
     return img_urls
 
+#for test
+def down_imgs_from_album_link(webdriverObj, album_link):
+    '''
+    从相册链接中获取各图片地址
+    :param webdriverObj:
+    :param album_link:
+    :return: 各图片地址
+    '''
+    webdriverObj.get(album_link)
+    time.sleep(2)
+
+    '''
+    打开相册之后，相册的图片是动态生成的，默认只显示一部分，
+    需要网下拉滚动条才会生成更多的图片，
+    下面的代码是模拟网下拉滚动条到底5次。为了简化这里只是简单的拉5次，
+    实际上可以根据照片的数量决定拉几次的。
+    '''
+    for i in range(0, 5):  # todo: 根据照片数量确定下拉次数
+        webdriverObj.execute_script("window.scrollTo(0, document.body.scrollHeight)")
+        time.sleep(1)
+
+    a_elems = webdriverObj.find_elements_by_xpath('//div[@id="J_Photo_fall"]/div[@class="ks-waterfall mm-photoW-cell"]/div/div[@class="mm-photoimg-area"]/a')
+
+    href_urls = []
+    for x in a_elems:
+        url = x.get_attribute('href')
+        href_urls.append(url)
+
+    img_urls = []
+    for y in href_urls:
+        webdriverObj.get(y)
+
+        try:
+            WebDriverWait(webdriverObj, 10).until(
+                EC.presence_of_element_located((By.ID, 'J_MmBigImg')))
+        except selenium.common.exceptions.TimeoutException, e:
+            print e
+            print 'presence_of_element_located Error'
+            continue
+
+        img_elem = webdriverObj.find_element_by_xpath('//img[@id="J_MmBigImg"]')
+        img = img_elem.get_attribute('src')
+        if img:
+            img_urls.append(img)
+            download_single_img(img)
+
+    return img_urls
+
+def download_single_img(img_url):
+    print img_url
+    try:
+        urllib.urlretrieve(img_url, './img/' + os.path.basename(img_url))
+    except urllib.ContentTooShortError, e:
+        print e
+        try:  # 再尝试一次下载
+            urllib.urlretrieve(img_url, './img/' + os.path.basename(img_url))
+        except urllib.ContentTooShortError, e:
+            print e
+            print 'secondError: ' + img_url
 
 def download_imgs(imgurls):
     '''
@@ -118,16 +177,7 @@ def download_imgs(imgurls):
         os.makedirs(img_dir)
 
     for x in imgurls:
-        print x
-        try:
-            urllib.urlretrieve(x, './img/' + os.path.basename(x))
-        except urllib.ContentTooShortError, e:
-            print e
-            try: # 再尝试一次下载
-                urllib.urlretrieve(x, './img/' + os.path.basename(x))
-            except urllib.ContentTooShortError, e:
-                print e
-                print 'secondError: ' + x
+        download_single_img(x)
 
 def get_model_info_links(webdriverObj, model_list_page_link):
     '''
@@ -195,6 +245,7 @@ if __name__ == '__main__':
         print xCount
         for y in model_info_links:
             album_home_links = get_model_album_home_links(browser, y)
+            print 'album_home_links:', album_home_links
             yCount += 1
             zCount = -1
             print xCount, ' ', yCount
@@ -205,10 +256,6 @@ if __name__ == '__main__':
                 print xCount, ' ', yCount, ' ', zCount
                 for i in album_links:
                     iCount += 1
-                    print xCount, ' ', yCount,  ' ', zCount,  ' ', iCount
-                    imgurls = get_imgurls_from_album_link(browser, i)
-                    download_imgs(imgurls)
-
-
-
+                    print 'list_page_num:', xCount, ' ', 'model_num:', yCount,  ' ', 'album_home_num:', zCount,  ' ', 'album_num:', iCount
+                    down_imgs_from_album_link(browser, i)
 
