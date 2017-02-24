@@ -1,9 +1,23 @@
 # -*- coding: utf-8 -*-
 
+import selenium
 from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 import urllib
 import os
+import re
+
+def get_one_page_album_links(webdriverObj):
+    aElements = webdriverObj.find_elements_by_xpath('//div[@class="mm-photo-list clearfix"]/div/div/h4/a')
+    albumLinks = []
+    for x in aElements:
+        link = x.get_attribute('href')
+        albumLinks.append(link)
+
+    return albumLinks
 
 def get_model_album_links(webdriverObj, album_home_link):
     '''
@@ -12,14 +26,57 @@ def get_model_album_links(webdriverObj, album_home_link):
     :param album_home_link:
     :return: 各相册的链接
     '''
+
     webdriverObj.get(album_home_link)
-    aElements = webdriverObj.find_elements_by_xpath('//div[@class="mm-photo-list clearfix"]/div/div/h4/a')
-    albumLinks = []
-    for x in aElements:
-        link = x.get_attribute('href')
-        albumLinks.append(link)
+    albumLinks = get_one_page_album_links(webdriverObj)
+    print 'first_page:', len(albumLinks)
+    total_pages = get_album_total_pages(webdriverObj, album_home_link)
+    print 'pages:', total_pages
+    for x in range(1, total_pages):
+        next_btn = webdriverObj.find_element_by_xpath('//*[@id="J_panel"]/a[3]')
+        if next_btn:
+            next_btn.click()
+            try:
+                WebDriverWait(webdriverObj, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, 'mm-photo-cell')))
+            except selenium.common.exceptions.TimeoutException, e:
+                print e
+                print 'presence_of_element_located Error'
+            time.sleep(2)
+            links = get_one_page_album_links(webdriverObj)
+            print 'links:', len(links)
+            albumLinks.extend(links)
+
     return albumLinks
 
+def get_album_total_pages(webdriverObj, album_home_link):
+    '''
+    :param webdriverObj:
+    :param album_home_link:
+    :return: 相册的页数
+    '''
+    webdriverObj.get(album_home_link)
+
+    try:
+        WebDriverWait(webdriverObj, 10).until(
+        EC.presence_of_element_located((By.CLASS_NAME, 'mm-photo-cell')))
+    except selenium.common.exceptions.TimeoutException, e:
+        print e
+        print 'presence_of_element_located Error'
+        return 0
+
+    print type(webdriverObj.page_source)
+    r = re.findall(ur'skip">共(\d+)页 到第<input type', webdriverObj.page_source)
+
+    pages = 0
+    if r:
+        pages = r[0]
+    try:
+        pages = int(pages)
+    except ValueError:
+        pages = 0
+
+    return pages
 
 def get_imgurls_from_album_link(webdriverObj, album_link):
     '''
@@ -127,8 +184,8 @@ def get_model_list_links(page_num):
 if __name__ == '__main__':
     browser = webdriver.Chrome()
 
-    # 只获取前3页模特的相册照片，可根据需要修改page_num的值，
-    model_list_links = get_model_list_links(3)
+    # 只获取前x页模特的相册照片，可根据需要修改page_num的值，
+    model_list_links = get_model_list_links(1)
 
     xCount = -1
     for x in model_list_links:
