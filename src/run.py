@@ -9,6 +9,8 @@ import time
 import urllib
 import os
 import re
+import math
+import tool
 
 def get_one_page_album_links(webdriverObj):
     aElements = webdriverObj.find_elements_by_xpath('//div[@class="mm-photo-list clearfix"]/div/div/h4/a')
@@ -17,7 +19,35 @@ def get_one_page_album_links(webdriverObj):
         link = x.get_attribute('href')
         albumLinks.append(link)
 
+    r = get_one_page_album_links_and_imgs_count(webdriverObj)
+    print 'links and count:', r
+    input('testsfd')
+
     return albumLinks
+
+def get_one_page_album_links_and_imgs_count(webdriverObj):
+    '''
+    :param webdriverObj:
+    :return: 返回相册连接以及相册的照片数量
+    '''
+
+    aElements = webdriverObj.find_elements_by_xpath('//div[@class="mm-photo-list clearfix"]/div/div/h4/a')
+    albumLinks = []
+    for x in aElements:
+        link = x.get_attribute('href')
+        albumLinks.append(link)
+
+    count_list = re.findall(ur'span class="mm-pic-number">\((\d+)张\)</span>', webdriverObj.page_source)
+
+    result = list()
+    if len(albumLinks) == len(count_list):
+        for i, j in enumerate(albumLinks):
+            d = dict()
+            d['link'] = j
+            d['count'] = tool.str_to_int(count_list[i])
+            result.append(d)
+
+    return result
 
 def get_model_album_links(webdriverObj, album_home_link):
     '''
@@ -28,7 +58,7 @@ def get_model_album_links(webdriverObj, album_home_link):
     '''
 
     webdriverObj.get(album_home_link)
-    albumLinks = get_one_page_album_links(webdriverObj)
+    albumLinks = get_one_page_album_links_and_imgs_count(webdriverObj)
     print 'first_page:', len(albumLinks)
     total_pages = get_album_total_pages(webdriverObj, album_home_link)
     print 'pages:', total_pages
@@ -43,7 +73,7 @@ def get_model_album_links(webdriverObj, album_home_link):
                 print e
                 print 'presence_of_element_located Error'
             time.sleep(2)
-            links = get_one_page_album_links(webdriverObj)
+            links = get_one_page_album_links_and_imgs_count(webdriverObj)
             print 'links:', len(links)
             albumLinks.extend(links)
 
@@ -65,16 +95,13 @@ def get_album_total_pages(webdriverObj, album_home_link):
         print 'presence_of_element_located Error'
         return 0
 
-    print type(webdriverObj.page_source)
     r = re.findall(ur'skip">共(\d+)页 到第<input type', webdriverObj.page_source)
 
     pages = 0
     if r:
         pages = r[0]
-    try:
-        pages = int(pages)
-    except ValueError:
-        pages = 0
+
+    pages = tool.str_to_int(pages)
 
     return pages
 
@@ -107,7 +134,7 @@ def get_imgurls_from_album_link(webdriverObj, album_link):
     return img_urls
 
 #for test
-def down_imgs_from_album_link(webdriverObj, album_link):
+def down_imgs_from_album_link(webdriverObj, album_link, imgs_count):
     '''
     从相册链接中获取各图片地址
     :param webdriverObj:
@@ -123,12 +150,24 @@ def down_imgs_from_album_link(webdriverObj, album_link):
     下面的代码是模拟网下拉滚动条到底5次。为了简化这里只是简单的拉5次，
     实际上可以根据照片的数量决定拉几次的。
     '''
-    for i in range(0, 5):  # todo: 根据照片数量确定下拉次数
+    a_elems = webdriverObj.find_elements_by_xpath('//div[@id="J_Photo_fall"]/div[@class="ks-waterfall mm-photoW-cell"]/div/div[@class="mm-photoimg-area"]/a')
+
+    default_imgs_count = len(a_elems)  # 下拉前默认展示的图片数量，下拉一次生成的照片也是这个数量
+    if default_imgs_count == 0:
+        return []
+
+
+    pull_count = int(math.ceil(imgs_count / float(default_imgs_count))) + 1  # 计算下拉次数
+    # for test
+    print 'default count:', default_imgs_count
+    print 'pull_count:', pull_count
+
+    for i in range(0, pull_count):
         webdriverObj.execute_script("window.scrollTo(0, document.body.scrollHeight)")
         time.sleep(1)
 
     a_elems = webdriverObj.find_elements_by_xpath('//div[@id="J_Photo_fall"]/div[@class="ks-waterfall mm-photoW-cell"]/div/div[@class="mm-photoimg-area"]/a')
-
+    print 'a_elems:', len(a_elems)
     href_urls = []
     for x in a_elems:
         url = x.get_attribute('href')
@@ -152,12 +191,14 @@ def down_imgs_from_album_link(webdriverObj, album_link):
             img_urls.append(img)
             download_single_img(img)
 
+    print 'img_urls:', len(img_urls)
+
     return img_urls
 
 def download_single_img(img_url):
     print img_url
     try:
-        urllib.urlretrieve(img_url, './img/' + os.path.basename(img_url))
+       urllib.urlretrieve(img_url, './img/' + os.path.basename(img_url))
     except urllib.ContentTooShortError, e:
         print e
         try:  # 再尝试一次下载
@@ -233,6 +274,12 @@ def get_model_list_links(page_num):
 
 if __name__ == '__main__':
     browser = webdriver.Chrome()
+    #
+    # # for test
+    # url_test = 'https://mm.taobao.com/self/album_photo.htm?spm=719.6642053.0.0.CyHHyq&user_id=687471686&album_id=10000702574&album_flag=0'
+    # count_test = 45
+    # down_imgs_from_album_link(browser, url_test, count_test)
+    # input('dfdfdfdfsdf')
 
     # 只获取前x页模特的相册照片，可根据需要修改page_num的值，
     model_list_links = get_model_list_links(1)
@@ -250,12 +297,19 @@ if __name__ == '__main__':
             zCount = -1
             print xCount, ' ', yCount
             for z in album_home_links:
-                album_links = get_model_album_links(browser, z)
-                zCount += 1
-                iCount = -1
-                print xCount, ' ', yCount, ' ', zCount
-                for i in album_links:
-                    iCount += 1
-                    print 'list_page_num:', xCount, ' ', 'model_num:', yCount,  ' ', 'album_home_num:', zCount,  ' ', 'album_num:', iCount
-                    down_imgs_from_album_link(browser, i)
+                links_list = get_model_album_links(browser, z)
+                print 'links_list:', links_list
+                for item in links_list:
+                    link = item['link']
+                    count = item['count']
+                    down_imgs_from_album_link(browser, link, count)
+
+                # album_links = get_model_album_links(browser, z)
+                # zCount += 1
+                # iCount = -1
+                # print xCount, ' ', yCount, ' ', zCount
+                # for i in album_links:
+                #     iCount += 1
+                #     print 'list_page_num:', xCount, ' ', 'model_num:', yCount,  ' ', 'album_home_num:', zCount,  ' ', 'album_num:', iCount
+                #     down_imgs_from_album_link(browser, i)
 
